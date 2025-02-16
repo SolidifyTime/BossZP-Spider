@@ -1,0 +1,51 @@
+# 数据库配置
+database:
+  host: localhost
+  port: 3306
+  user: your_username
+  password: "your_password"
+  database: boss_spider
+  charset: utf8mb4
+
+# 爬虫配置
+spider:
+  # 并发数
+  concurrency: 3
+  # 请求超时时间（秒）
+  timeout: 30
+  # 请求间隔（秒）
+  delay: 5
+  # 重试次数
+  max_retries: 5
+  # 最大爬取页数
+  max_pages: 10
+  # 起始URL
+  start_url: "https://www.zhipin.com/web/geek/job"
+  # 搜索关键词
+  keywords:
+    - "Python"
+    - "爬虫"
+    - "数据分析"
+
+# 请求头配置
+headers:
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
+  accept-encoding: "gzip, deflate, br"
+  accept-language: "zh-CN,zh;q=0.9,en;q=0.8"
+  cache-control: "max-age=0"
+  sec-ch-ua: '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"'
+  sec-ch-ua-mobile: "?0"
+  sec-ch-ua-platform: '"macOS"'
+  sec-fetch-dest: "document"
+  sec-fetch-mode: "navigate"
+  sec-fetch-site: "same-origin"
+  sec-fetch-user: "?1"
+  upgrade-insecure-requests: "1"
+  user-agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+
+# 代理配置
+proxy:
+  # 是否启用代理
+  enable: false
+  # 代理池API地址
+  api: "http://localhost:5010/get/"
