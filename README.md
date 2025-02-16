@@ -99,7 +99,7 @@ headers:
 1. 克隆项目到本地
 ```bash
 git clone [项目地址]
-cd bosszp_Trae
+cd bossZP-Spider
 ```
 
 2. 安装依赖
