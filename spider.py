@@ -1,25 +1,29 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.keys import Keys
-from loguru import logger
-import time
 import csv
-import yaml
 import random
-from fake_useragent import UserAgent
-from retrying import retry
+import time
+
+import pymysql
 import requests
+import yaml
+from fake_useragent import UserAgent
+from loguru import logger
+from retrying import retry
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.webdriver import WebDriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+
 
 class BossSpider:
     def __init__(self, config_path='config.yaml'):
         """初始化爬虫"""
         with open(config_path, 'r', encoding='utf-8') as f:
             self.config = yaml.safe_load(f)
-        self.driver = None
+        self.driver:WebDriver = None
         self.wait = None
         self.proxy = None
         if self.config['proxy']['enable']:
@@ -87,6 +91,74 @@ class BossSpider:
         })
         self.wait = WebDriverWait(self.driver, 20)
 
+    def _crawl_job_details(self,):
+        time.sleep(random.uniform(3, 5))  # 增加等待时间
+
+        # 等待页面加载完成，增加重试次数和超时时间
+        max_retries = 3
+        for retry in range(max_retries):
+            try:
+                # 等待任一元素出现，使用presence_of_all_elements_located替代
+                elements = self.wait.until(
+                    EC.presence_of_all_elements_located((By.CLASS_NAME, 'job-sec-text'))
+                )
+                if not elements:
+                    elements = self.wait.until(
+                        EC.presence_of_all_elements_located((By.CLASS_NAME, 'job-keyword-list'))
+                    )
+                # 确保页面完全加载
+                time.sleep(random.uniform(2, 3))
+                break
+            except Exception as e:
+                if retry == max_retries - 1:
+                    raise Exception(f"页面加载超时: {str(e)}")
+                time.sleep(random.uniform(2, 3))
+
+        # 随机滚动页面，增加滚动次数和间隔
+        for _ in range(4):
+            scroll_height = random.randint(300, 800)
+            self.driver.execute_script(f"window.scrollBy(0, {scroll_height});")
+            time.sleep(random.uniform(0.8, 1.8))
+
+        # 滚动到底部并等待加载
+        self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(random.uniform(2, 3))
+        get_element_texts = lambda xpath: [
+            element.text for element in self.wait.until(
+                EC.presence_of_all_elements_located((By.XPATH, xpath))
+            )
+        ]
+        result = {
+            'job_details': [],
+            'job_keywords': ''
+        }
+        try:
+            job_details = get_element_texts('.//div[@class="job-sec-text"]')
+            result['job_details'] = job_details
+        except Exception as e:
+            logger.error(f"获取职位详情失败: {str(e)}")
+
+        try:
+            job_keywords_ele:WebElement = self.driver.find_element(By.XPATH,'//ul[@class="job-keyword-list"]')
+            li_elements = job_keywords_ele.find_elements(By.TAG_NAME, "li")
+
+            # 存储所有 <li> 元素的文本值的列表
+            keyword_values = ''
+            for li in li_elements:
+                if isinstance(li.text,tuple):
+                    keyword_values +="".join(map(str, li.text))
+                elif isinstance(li.text,str):
+                    keyword_values += f" {li.text},"
+                else:
+                    continue
+            result['job_keywords'] = keyword_values
+        except Exception as e:
+            logger.error(f"获取职位详情失败: {str(e)}")
+        return result
+
+
+
+
     @retry(stop_max_attempt_number=3, wait_random_min=5000, wait_random_max=10000)
     def search_jobs(self, keyword):
         """搜索职位"""
@@ -95,7 +167,7 @@ class BossSpider:
 
         try:
             # 构建搜索URL
-            search_url = f"https://www.zhipin.com/web/geek/job?query={keyword}&city=101280600"
+            search_url = f"https://www.zhipin.com/web/geek/job?query={keyword}&city=101210100"
             self.driver.get(search_url)
             time.sleep(random.uniform(8, 12))  # 增加初始等待时间
 
@@ -161,12 +233,21 @@ class BossSpider:
                         EC.presence_of_all_elements_located((By.XPATH, xpath))
                     )
                 ]
+
+                get_element_href = lambda xpath: [
+                    element.get_attribute('href') for element in self.wait.until(
+                        EC.presence_of_all_elements_located((By.XPATH, xpath))
+                    )
+                ]
+
+
                 
                 # 分步获取数据并验证
                 jobs = get_element_texts('//span[@class="job-name"]')
+                links = get_element_href('//a[@class="job-card-left"]')
                 if not jobs:
                     raise Exception("未找到职位名称数据")
-                    
+
                 salaries = get_element_texts('//span[@class="salary"]')
                 companies = get_element_texts('//h3[@class="company-name"]/a')
                 job_types = get_element_texts('//div[contains(@class, "job-card-footer")]//li[1]')
@@ -177,6 +258,17 @@ class BossSpider:
                 )
                 details = [detail.text for detail in details]
 
+                jobs_detail_list = []
+                # 不需要详情可以注释这部分  ---开始
+                for link in links:
+                    self.driver.execute_script(f"window.open('{link}', '_blank');")
+                    window_handles = self.driver.window_handles
+                    self.driver.switch_to.window(window_handles[-1])
+                    time.sleep(random.uniform(3, 5))
+                    jobs_detail_list.append((self._crawl_job_details()))
+                    self.driver.close()
+                    self.driver.switch_to.window(window_handles[0])
+                # 不需要详情可以注释这部分  ---结束
                 # 验证数据完整性和一致性
                 data_lengths = [len(x) for x in [jobs, salaries, companies]]
                 if not all(x == data_lengths[0] for x in data_lengths):
@@ -188,9 +280,10 @@ class BossSpider:
                 # 对于非关键字段，使用现有长度
                 job_types = job_types[:len(jobs)] if job_types else [""] * len(jobs)
                 details = details[:len(jobs)] if details else [""] * len(jobs)
+                jobs_detail_list = jobs_detail_list[:len(jobs)] if jobs_detail_list else [""] * len(jobs)
 
                 # 保存数据
-                self._save_data(keyword, jobs, salaries, companies, job_types, details)
+                self._save_data(keyword, jobs, salaries, companies, job_types, details,jobs_detail_list)
                 logger.info(f"已完成第{page}页数据爬取，获取到{len(jobs)}条职位信息")
 
                 # 优化翻页逻辑
@@ -225,7 +318,7 @@ class BossSpider:
                     pass
                 break
 
-    def _save_data(self, keyword, jobs, salaries, companies, job_types, details):
+    def _save_data(self, keyword, jobs, salaries, companies, job_types, details,jobs_detail_list):
         """保存职位数据"""
         data = []
         for i in range(len(jobs)):
@@ -236,6 +329,8 @@ class BossSpider:
                 company = companies[i].strip() if i < len(companies) else '未知公司'
                 job_type = job_types[i].strip() if i < len(job_types) else ''
                 detail = details[i].strip() if i < len(details) else ''
+                job_keywords = jobs_detail_list[i].get('job_keywords','')
+                job_details = jobs_detail_list[i].get('job_details','')
                 
                 # 放宽数据验证条件，只要职位名称存在即可
                 if not position or position == '未知职位':
@@ -247,20 +342,23 @@ class BossSpider:
                     'salary': salary,
                     'company': company,
                     'job_type': job_type,
-                    'details': detail
+                    'details': detail,
+                    'job_keywords': job_keywords,
+                    'job_details': job_details
                 }
                 data.append(job_info)
                 logger.debug(f"成功处理第{i+1}条数据: {position}")
             except Exception as e:
                 logger.error(f"处理第{i+1}条职位数据失败: {e}")
                 continue
-
+        # 保存到数据库
+        self.save_to_database(data)
         # 保存到CSV文件，确保使用UTF-8编码并添加BOM
-        csv_file = f'深圳{keyword}_jobs.csv'
+        csv_file = f'杭州{keyword}_jobs.csv'
         try:
             # 使用UTF-8-SIG编码（带BOM），这样Excel打开时不会乱码
             with open(csv_file, mode='a', newline='', encoding='utf-8-sig') as f:
-                writer = csv.DictWriter(f, fieldnames=['position', 'salary', 'company', 'job_type', 'details'])
+                writer = csv.DictWriter(f, fieldnames=['position', 'salary', 'company', 'job_type', 'details', 'job_keywords', 'job_details'])
                 if f.tell() == 0:  # 如果文件为空，写入表头
                     writer.writeheader()
                 writer.writerows(data)
@@ -268,10 +366,32 @@ class BossSpider:
         except Exception as e:
             logger.error(f"保存数据到CSV文件失败: {e}")
 
+    def save_to_database(self, data):
+        database_config = self.config.get("database")
+        if database_config:
+            host = database_config.get("host")
+            port = database_config.get("port")
+            user = database_config.get("user")
+            password = database_config.get("password")
+            database = database_config.get("database")
+            table = "jobs"
+            try:
+                conn = pymysql.connect(host=host, port=port, user=user, password=password, database=database)
+                cursor = conn.cursor()
+                count = 0
+                for item in data:
+                    sql = f"INSERT INTO {table} (position, salary, company, job_type, details, job_keywords, job_details) VALUES (%s, %s, %s, %s, %s, %s, %s)"
+                    count += cursor.execute(sql, (item['position'], item['salary'], item['company'], item['job_type'], item['details'], item['job_keywords'], item['job_details']))
+                print(count)
+                conn.commit()
+            except Exception as e:
+                logger.error(f"保存数据到数据库失败: {e}", exc_info=True)
+
+
 if __name__ == '__main__':
     # 配置日志
     logger.add('spider_{time}.log', rotation='1 day', retention='7 days')
     
     # 实例化爬虫并启动
     spider = BossSpider()
-    spider.search_jobs('销售')
+    spider.search_jobs('测试开发')
