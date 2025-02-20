@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    ports:
+      - "3306:3306"  # 将宿主机的 3306 端口映射到容器内的 3306 端口
+    environment:
+      MYSQL_ROOT_PASSWORD: YOUR_PASSWD
+    volumes:
+      - ./my.cnf:/etc/mysql/my.cnf
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql-data:/var/lib/mysql
+    restart: always
+
+volumes:
+  mysql-data:
